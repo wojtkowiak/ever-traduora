@@ -36,6 +36,8 @@ services:
     restart: always
     ports:
       - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
     environment:
       MYSQL_DATABASE: tr_dev
       MYSQL_USER: tr
@@ -44,6 +46,9 @@ services:
       MYSQL_ALLOW_EMPTY_PASSWORD: 'true'
     networks:
       - overlay
+
+volumes:
+  mysql-data:
 
 networks:
   overlay:
