@@ -19,18 +19,19 @@ services:
       TR_DB_DATABASE: tr_dev
       TR_DB_HOST: mysqldb
       TR_DB_PORT: 3306
-      NODE_ENV: ${NODE_ENV:-development}    
+      NODE_ENV: ${NODE_ENV:-development}
     entrypoint: './docker-entrypoint.compose.sh'
     restart: on-failure
     depends_on:
       - mysqldb
     links:
-      - mysqldb:${TR_DB_HOST:-mysqldb}      
+      - mysqldb:${TR_DB_HOST:-mysqldb}
     networks:
       - overlay
 
   mysqldb:
     image: mysql:5.7
+    platform: linux/x86_64
     container_name: mysqldb
     restart: always
     ports:

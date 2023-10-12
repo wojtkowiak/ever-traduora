@@ -8,6 +8,7 @@ export const IMPORT_FORMATS: ImportFormat[] = [
   { displayName: 'Android Resources (XML)', extension: 'xml', code: 'androidxml' },
   { displayName: 'CSV', extension: 'csv', code: 'csv' },
   { displayName: 'XLIFF 1.2', extension: 'xliff', code: 'xliff12' },
+  { displayName: 'JSON i18n', extension: 'json', code: 'jsoni18n' },
   { displayName: 'JSON Flat', extension: 'json', code: 'jsonflat' },
   { displayName: 'JSON', extension: 'json', code: 'jsonnested' },
   { displayName: 'YAML Flat', extension: 'yaml', code: 'yamlflat' },

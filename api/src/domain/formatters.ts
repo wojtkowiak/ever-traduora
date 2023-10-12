@@ -10,4 +10,5 @@ export type Exporter = (data: IntermediateTranslationFormat) => Promise<string |
 export interface IntermediateTranslation {
   term: string;
   translation: string;
+  context?: string;
 }

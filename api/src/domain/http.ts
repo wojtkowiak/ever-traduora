@@ -609,6 +609,7 @@ export enum ImportExportFormat {
   Xliff12 = 'xliff12',
   JsonFlat = 'jsonflat',
   JsonNested = 'jsonnested',
+  JsonI18n = 'jsoni18n',
   YamlFlat = 'yamlflat',
   YamlNested = 'yamlnested',
   Properties = 'properties',

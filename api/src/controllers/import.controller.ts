@@ -40,6 +40,7 @@ import { phpParser } from '../formatters/php';
 import { ApiFile } from './../decorators/api-file.decorator';
 import { resXParser } from '../formatters/resx';
 import { PaymentRequiredException } from './../errors';
+import { jsonI18nParser } from "../formatters/jsoni18n";
 
 @Controller('api/v1/projects/:projectId/imports')
 @ApiTags('Imports')
@@ -154,6 +155,7 @@ export class ImportController {
         const term = this.termRepo.create({
           project: project,
           value: incoming.term,
+          context: incoming.context
         });
         termsToAdd.push(term);
       }
@@ -200,6 +202,8 @@ export class ImportController {
           return await jsonFlatParser(contents);
         case 'jsonnested':
           return await jsonNestedParser(contents);
+        case 'jsoni18n':
+          return await jsonI18nParser(contents);
         case 'yamlflat':
           return await yamlFlatParser(contents);
         case 'yamlnested':
