@@ -1,38 +1,51 @@
 import { NestFactory } from '@nestjs/core';
-import { Connection } from 'typeorm';
-import { addPipesAndFilters, AppModule } from './app.module';
-import { config } from './config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express';
-
 import { version } from '../package.json';
-
-interface Closable {
-  close(): Promise<void>;
-}
+import { setupShutdownHandler } from './shutdown.handler';
+import { checkEnvVariables } from './env.logger';
+import { Closable } from './types';
+import { config } from './config';
+import { addPipesAndFilters, AppModule } from './app.module';
+import { SeedDataService } from './seeds/seed-data.service';
+import * as chalk from 'chalk';
+import { getDataSourceConnection } from './connection/datasource';
+import { getDbType } from './utils/database-type-helper';
 
 const closables: Closable[] = [];
 
-process.on('SIGINT', async () => {
-  console.log('Shutting down...');
-  for (const closable of closables) {
-    await closable.close();
-  }
-  process.exit(1);
-});
-
+/**
+ * Bootstraps the application by creating an instance of the AppModule and configuring the necessary components.
+ * This function also sets up the necessary shutdown handler for graceful application termination.
+ */
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, new ExpressAdapter());
+
   addPipesAndFilters(app);
   closables.push(app);
 
+  // Get current database type
+  const dbType = getDbType();
+
   // Run migrations
   if (config.autoMigrate) {
-    console.log('Running DB migrations if necessary');
-    const connection = app.get(Connection);
-    await connection.runMigrations();
-    console.log('DB migrations up to date');
+    try {
+      const dataSource = await getDataSourceConnection();
+      await dataSource.runMigrations();
+      console.log('DB migrations up to date');
+    } catch (error) {
+      console.error(`Failed to run migrations: ${error.message}`);
+      process.exit(1);
+    }
   }
+  if (config.seedData) {
+    console.log(chalk.yellow('🌱 Seeding initial data...'));
+    const seedService = app.get(SeedDataService);
+    await seedService.runAllSeed();
+  }
+
+  const port = config.port;
+  const host = '0.0.0.0';
 
   // Setup swagger
   {
@@ -60,9 +73,20 @@ async function bootstrap() {
 
     const document = SwaggerModule.createDocument(app, options);
     SwaggerModule.setup('api/v1/swagger', app, document, { customSiteTitle: 'Traduora API v1 docs' });
+    console.log(`Swagger UI available at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/api/v1/swagger`);
   }
 
-  await app.listenAsync(config.port, '0.0.0.0');
+  await app.listen(port, host, () => {
+    console.log(`Using database type: ${dbType}`);
+    console.log(`Listening at http://${host}:${port}`);
+  });
 }
 
-bootstrap();
+// Initialize Check Env Variables
+checkEnvVariables();
+
+// Bootstrap the application
+bootstrap().then(() => {
+  // Initialize the shutdown handler
+  setupShutdownHandler(closables);
+});

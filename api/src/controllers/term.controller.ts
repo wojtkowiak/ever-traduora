@@ -9,6 +9,7 @@ import { Term } from '../entity/term.entity';
 import AuthorizationService from '../services/authorization.service';
 import { ApiOAuth2, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Translation } from '../entity/translation.entity';
+import { getLexicalOrderClause } from '../utils/database-type-helper';
 import { ProjectLocale } from '../entity/project-locale.entity';
 
 @Controller('api/v1/projects/:projectId/terms')
@@ -33,11 +34,16 @@ export default class TermController {
     const user = this.auth.getRequestUserOrClient(req);
     const membership = await this.auth.authorizeProjectAction(user, projectId, ProjectAction.ViewTerm);
 
-    const terms = await this.termRepo.find({
-      where: { project: { id: membership.project.id } },
-      order: { value: 'ASC' },
-      relations: ['labels'],
-    });
+    // Use query builder for consistent sorting across databases
+    const queryBuilder = this.termRepo
+      .createQueryBuilder('term')
+      .leftJoinAndSelect('term.labels', 'label')
+      .where('term.project.id = :projectId', { projectId: membership.project.id });
+
+    // Apply database-specific collation for consistent lexical ordering
+    queryBuilder.orderBy(getLexicalOrderClause('term.value'), 'ASC');
+
+    const terms = await queryBuilder.getMany();
 
     const data = terms.map(t => ({
       id: t.id,
@@ -52,6 +58,46 @@ export default class TermController {
     };
   }
 
+  @Get('/filter-by-label')
+  @ApiOperation({ summary: 'Filter terms by a single label' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Success', type: ListProjectTermsResponse })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Bad request' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Project not found' })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Unauthorized' })
+  async findByLabel(@Req() req, @Param('projectId') projectId: string, @Query('labelId') labelId: string) {
+    const user = this.auth.getRequestUserOrClient(req);
+    const membership = await this.auth.authorizeProjectAction(user, projectId, ProjectAction.ViewTerm);
+
+    if (!labelId) {
+      return {
+        data: [],
+        message: 'No label provided for filtering',
+      };
+    }
+
+    const queryBuilder = this.termRepo
+      .createQueryBuilder('term')
+      .leftJoinAndSelect('term.labels', 'label')
+      .where('term.project.id = :projectId', { projectId: membership.project.id })
+      .andWhere('label.id = :labelId', { labelId });
+
+    // Apply database-specific collation for consistent lexical ordering
+    queryBuilder.orderBy(getLexicalOrderClause('term.value'), 'ASC');
+
+    const terms = await queryBuilder.getMany();
+
+    const data = terms.map(t => ({
+      id: t.id,
+      value: t.value,
+      context: t.context,
+      labels: t.labels,
+      date: t.date,
+    }));
+
+    return {
+      data,
+    };
+  }
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Add a new project term' })
@@ -75,7 +121,9 @@ export default class TermController {
 
       const projectLocales = await this.projectLocaleRepo.find({
         where: {
-          project: membership.project,
+          project: {
+            id: membership.project.id,
+          },
         },
       });
 
@@ -119,7 +167,7 @@ export default class TermController {
 
     await this.termRepo.update({ id: termId }, { value: payload.value, context: payload.context });
 
-    const term = await this.termRepo.findOneOrFail({ id: termId }, { relations: ['labels'] });
+    const term = await this.termRepo.findOneOrFail({ where: { id: termId }, relations: ['labels'] });
 
     return {
       data: {
@@ -143,7 +191,7 @@ export default class TermController {
     const user = this.auth.getRequestUserOrClient(req);
     const membership = await this.auth.authorizeProjectAction(user, projectId, ProjectAction.DeleteTerm);
     await this.termRepo.manager.transaction(async entityManager => {
-      const term = await entityManager.findOneOrFail(Term, termId, { where: { project: membership.project } });
+      const term = await entityManager.findOneOrFail(Term, { where: { id: termId, project: { id: membership.project.id } } });
       await entityManager.remove(term);
       await entityManager.decrement(Project, { id: membership.project.id }, 'termsCount', 1);
     });

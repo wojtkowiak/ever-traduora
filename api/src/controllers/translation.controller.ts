@@ -44,7 +44,7 @@ export default class TranslationController {
     const membership = await this.auth.authorizeProjectAction(user, projectId, ProjectAction.ViewTranslation);
     const locales = await this.projectLocaleRepo.find({
       where: {
-        project: membership.project,
+        project: { id: membership.project.id },
       },
       relations: ['locale'],
     });
@@ -68,7 +68,7 @@ export default class TranslationController {
     const user = this.auth.getRequestUserOrClient(req);
     const membership = await this.auth.authorizeProjectAction(user, projectId, ProjectAction.AddTranslation, 0, 1);
 
-    const locale = await this.localeRepo.findOne({ code: payload.code });
+    const locale = await this.localeRepo.findOneBy({ code: payload.code });
 
     if (!locale) {
       throw new NotFoundException('unknown locale code');
@@ -94,9 +94,11 @@ export default class TranslationController {
       await entityManager.increment(Project, { id: membership.project.id }, 'localesCount', 1);
     });
 
-    const result = await this.projectLocaleRepo.findOneOrFail({
-      locale,
-      project: membership.project,
+    const result = await this.projectLocaleRepo.findOneByOrFail({
+      locale: {
+        code: locale.code,
+      },
+      project: { id: membership.project.id },
     });
 
     return {
@@ -126,7 +128,7 @@ export default class TranslationController {
       // Ensure locale is requested project locale
       const projectLocale = await this.projectLocaleRepo.findOneOrFail({
         where: {
-          project: membership.project,
+          project: { id: membership.project.id },
           locale: {
             code: localeCode,
           },
@@ -135,11 +137,13 @@ export default class TranslationController {
       try {
         const translations = await this.translationRepo.find({
           where: {
-            projectLocale,
+            projectLocale: {
+              id: projectLocale.id,
+            },
           },
           relations: ['term', 'labels'],
         });
-        const result = translations.map(t => ({ termId: t.term.id, value: t.value, labels: t.labels, date: t.date }));
+        const result = translations.filter(t => !!t.term).map(t => ({ termId: t.term.id, value: t.value, labels: t.labels, date: t.date }));
         return { data: result };
       } catch (error) {
         throw new NotFoundException('project translation not found');
@@ -186,7 +190,9 @@ export default class TranslationController {
         let translation = await this.translationRepo.findOne({
           where: {
             termId: term.id,
-            projectLocale: projectLocale,
+            projectLocale: {
+              id: projectLocale.id,
+            },
           },
           relations: ['labels'],
         });
@@ -231,7 +237,7 @@ export default class TranslationController {
     await this.projectLocaleRepo.manager.transaction(async entityManager => {
       const projectLocale = await entityManager.findOneOrFail(ProjectLocale, {
         where: {
-          project: membership.project,
+          project: { id: membership.project.id },
           locale: {
             code: localeCode,
           },

@@ -12,6 +12,7 @@ import { Project } from '../entity/project.entity';
 import { Term } from '../entity/term.entity';
 import { Translation } from '../entity/translation.entity';
 import AuthorizationService from '../services/authorization.service';
+import { resolveColumnName } from '../utils/alias-helper';
 
 @Controller('api/v1/projects/:projectId/stats')
 @UseGuards(AuthGuard())
@@ -37,7 +38,7 @@ export default class ProjectStatsController {
     const membership = await this.auth.authorizeProjectAction(user, projectId, ProjectAction.ViewTranslation);
     const locales = await this.projectLocaleRepo.find({
       where: {
-        project: membership.project,
+        project: { id: membership.project.id },
       },
       relations: ['locale'],
     });
@@ -45,11 +46,11 @@ export default class ProjectStatsController {
     const termCount = membership.project.termsCount;
 
     const translatedByLocale = await this.projectLocaleRepo
-      .createQueryBuilder('projectLocale')
-      .leftJoin('projectLocale.translations', 'translations')
-      .select('projectLocale.localeCode', 'localeCode')
+      .createQueryBuilder(resolveColumnName('projectLocale'))
+      .leftJoin(`${resolveColumnName('projectLocale')}.translations`, 'translations')
+      .select(`${resolveColumnName('projectLocale')}.${resolveColumnName('localeCode')}`, 'localeCode')
       .addSelect('count(*)', 'translated')
-      .groupBy('localeCode')
+      .groupBy(resolveColumnName('localeCode'))
       .whereInIds(locales.map(l => l.id))
       .andWhere("translations.value <> ''")
       .execute();
@@ -58,7 +59,7 @@ export default class ProjectStatsController {
       const translatedCount = parseInt(s.translated, 10);
       return {
         localeCode: s.localeCode,
-        progress: _.round(translatedCount / termCount, 2),
+        progress: Math.floor((translatedCount / termCount) * 100) / 100,
         translated: translatedCount,
         total: termCount,
       };
@@ -86,7 +87,7 @@ export default class ProjectStatsController {
     const totalTranslated = _.sumBy(withDefaults, 'translated');
     const localeCount = locales.length;
     const totalTerms = localeCount > 0 ? termCount * localeCount : termCount;
-    const totalProgress = totalTerms > 0 ? _.round(totalTranslated / totalTerms, 10) : 0;
+    const totalProgress = totalTerms > 0 ? Math.floor((totalTranslated / totalTerms) * 100) / 100 : 0;
 
     const projectStats = {
       progress: totalProgress,

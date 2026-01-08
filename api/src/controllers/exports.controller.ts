@@ -23,6 +23,8 @@ import { ApiOAuth2, ApiTags, ApiOperation, ApiProduces, ApiResponse } from '@nes
 import { androidXmlExporter } from '../formatters/android-xml';
 import { resXExporter } from '../formatters/resx';
 import { merge } from 'lodash';
+import { resolveColumnName } from '../utils/alias-helper';
+import { getLexicalOrderClause } from '../utils/database-type-helper';
 
 @Controller('api/v1/projects/:projectId/exports')
 export class ExportsController {
@@ -54,7 +56,9 @@ export class ExportsController {
     // Ensure locale is requested project locale
     const projectLocale = await this.projectLocaleRepo.findOne({
       where: {
-        project: membership.project,
+        project: {
+          id: membership.project.id,
+        },
         locale: {
           code: query.locale,
         },
@@ -65,14 +69,20 @@ export class ExportsController {
       throw new NotFoundException('unknown locale code');
     }
 
-    const termsWithTranslations = await this.termRepo
+    const queryBuilder = this.termRepo
       .createQueryBuilder('term')
-      .leftJoinAndSelect('term.translations', 'translation', 'translation.projectLocaleId = :projectLocaleId', {
+      .leftJoinAndSelect('term.translations', 'translation', `translation.${resolveColumnName('projectLocaleId')} = :projectLocaleId`, {
         projectLocaleId: projectLocale.id,
       })
-      .where('term.projectId = :projectId', { projectId })
-      .orderBy('term.value', 'ASC')
-      .getMany();
+      .where(`term.${resolveColumnName('projectId')} = :projectId`, { projectId });
+
+    queryBuilder.orderBy(getLexicalOrderClause('term.value'), 'ASC');
+
+    if (query.untranslated) {
+      queryBuilder.andWhere("translation.value = ''");
+    }
+
+    const termsWithTranslations = await queryBuilder.getMany();
 
     let termsWithTranslationsMapped = termsWithTranslations.map(t => ({
       term: t.value,
@@ -93,7 +103,9 @@ export class ExportsController {
     if (query.fallbackLocale) {
       const fallbackProjectLocale = await this.projectLocaleRepo.findOne({
         where: {
-          project: membership.project,
+          project: {
+            id: membership.project.id,
+          },
           locale: {
             code: query.fallbackLocale,
           },
@@ -101,14 +113,16 @@ export class ExportsController {
       });
 
       if (fallbackProjectLocale) {
-        const fallbackTermsWithTranslations = await this.termRepo
+        const fallbackQueryBuilder = this.termRepo
           .createQueryBuilder('term')
-          .leftJoinAndSelect('term.translations', 'translation', 'translation.projectLocaleId = :projectLocaleId', {
+          .leftJoinAndSelect('term.translations', 'translation', `translation.${resolveColumnName('projectLocaleId')} = :projectLocaleId`, {
             projectLocaleId: fallbackProjectLocale.id,
           })
-          .where('term.projectId = :projectId', { projectId })
-          .orderBy('term.value', 'ASC')
-          .getMany();
+          .where(`term.${resolveColumnName('projectId')} = :projectId`, { projectId });
+
+        fallbackQueryBuilder.orderBy(getLexicalOrderClause('term.value'), 'ASC');
+
+        const fallbackTermsWithTranslations = await fallbackQueryBuilder.getMany();
 
         const fallbackTermsWithTranslationsMapped = fallbackTermsWithTranslations.map(t => ({
           term: t.value,

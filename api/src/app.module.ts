@@ -5,6 +5,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { renderFile } from 'ejs';
 import { config } from './config';
 import { AuthController } from './controllers/auth.controller';
@@ -40,17 +42,29 @@ import { JwtStrategy } from './services/jwt.strategy';
 import MailService from './services/mail.service';
 import { UserService } from './services/user.service';
 import ProjectStatsController from './controllers/project-stats.controller';
+import { ConfigModule } from '@nestjs/config';
+import { RedisModule } from './redis/redis.module';
+import { UserLoginAttemptsStorage } from './redis/user-login-attempts.storage';
+import { CustomThrottlerGuard } from './guards/custom-throttler.guard';
+import { SeedDataService } from './seeds/seed-data.service';
+import { UserSeed } from './seeds/user.seed';
+import { dataSourceOptions } from './connection/datasource';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
-      secretOrPrivateKey: config.secret,
+      secret: config.secret,
       signOptions: {
         expiresIn: config.authTokenExpires,
       },
     }),
-    TypeOrmModule.forRoot(config.db.default),
+    ThrottlerModule.forRoot([{ ttl: config.throttle.global.ttl, limit: config.throttle.global.limit }]),
+    ConfigModule.forRoot({ isGlobal: true }),
+    RedisModule,
+    TypeOrmModule.forRootAsync({
+      useFactory: async () => dataSourceOptions(),
+    }),
     TypeOrmModule.forFeature([User, Invite, ProjectUser, Project, Term, Locale, ProjectLocale, Translation, ProjectClient, Plan, Label]),
     HttpModule,
   ],
@@ -72,10 +86,30 @@ import ProjectStatsController from './controllers/project-stats.controller';
     LocaleController,
     IndexController,
   ],
-  providers: [UserService, AuthService, MailService, JwtStrategy, AuthorizationService],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: CustomThrottlerGuard,
+    },
+    UserService,
+    AuthService,
+    MailService,
+    JwtStrategy,
+    AuthorizationService,
+    UserLoginAttemptsStorage,
+    SeedDataService,
+    UserSeed,
+  ],
 })
 export class AppModule {
-  configure(consumer: MiddlewareConsumer) {
+  /**
+   * Configures middleware for the application, applying the Morgan logging middleware
+   * conditionally based on the `accessLogsEnabled` configuration.
+   *
+   * @param {MiddlewareConsumer} consumer - The `MiddlewareConsumer` instance used to apply middleware to routes.
+   * @returns {void} - This function does not return a value.
+   */
+  configure(consumer: MiddlewareConsumer): void {
     if (config.accessLogsEnabled) {
       MorganMiddleware.configure('short');
       consumer.apply(MorganMiddleware).forRoutes('*');
@@ -83,7 +117,14 @@ export class AppModule {
   }
 }
 
-export const addPipesAndFilters = (app: NestExpressApplication) => {
+/**
+ * Configures global pipes, filters, CORS, static assets, and view settings for the given NestExpress application instance.
+ * This setup is used to ensure consistent security, validation, and resource serving behavior across the application.
+ *
+ * @param {NestExpressApplication} app - The NestJS application instance to apply the configurations to.
+ * @returns {void} - This function does not return a value.
+ */
+export const addPipesAndFilters = (app: NestExpressApplication): void => {
   app.disable('x-powered-by');
 
   app.set('etag', false);

@@ -13,7 +13,10 @@ import AuthorizationService from '../services/authorization.service';
 @ApiOAuth2([])
 @ApiTags('Project Users')
 export default class ProjectUserController {
-  constructor(private auth: AuthorizationService, @InjectRepository(ProjectUser) private projectUserRepo: Repository<ProjectUser>) {}
+  constructor(
+    private auth: AuthorizationService,
+    @InjectRepository(ProjectUser) private projectUserRepo: Repository<ProjectUser>,
+  ) {}
 
   @Get(':projectId/users')
   @ApiOperation({ summary: 'List all users with access to a project' })
@@ -94,9 +97,17 @@ export default class ProjectUserController {
       throw new BadRequestException(`can't edit your own role`);
     }
 
-    const targetUser = await this.projectUserRepo.findOneOrFail({
-      where: { user: { id: userId } },
+    const targetUser = await this.projectUserRepo.findOne({
+      where: {
+        user: { id: userId },
+        project: { id: projectId },
+      },
+      relations: ['user', 'project'],
     });
+
+    if (!targetUser) {
+      throw new BadRequestException(`The specified user is not part of this project.`);
+    }
 
     await this.projectUserRepo.remove(targetUser);
   }
