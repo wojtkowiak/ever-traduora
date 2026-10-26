@@ -4,7 +4,7 @@ ARG NODE_OPTIONS
 ARG NODE_ENV
 
 # Build stage
-FROM --platform=linux/x86_64 node:20.19.0-alpine3.21 as builder
+FROM --platform=linux/x86_64 node:22.23.4-alpine3.23 as builder
 
 LABEL maintainer="ever@ever.co"
 LABEL org.opencontainers.image.source https://github.com/ever-co/ever-traduora
@@ -43,7 +43,7 @@ RUN dos2unix bin/* && chmod +x bin/*.sh
 RUN bin/build.sh
 
 # Runtime stage
-FROM --platform=linux/x86_64 node:20.19.0-alpine3.21
+FROM --platform=linux/x86_64 node:22.23.4-alpine3.23
 
 ENV NODE_OPTIONS=${NODE_OPTIONS:-"--max-old-space-size=12288"}
 ENV NODE_ENV=${NODE_ENV:-production}
